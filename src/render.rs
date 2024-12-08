@@ -359,6 +359,24 @@ impl<'p> Layer<'p> {
         self.data.layer.add_shape(line);
     }
 
+    fn add_line_shape_with_fill_color<I>(&self, points: I)
+    where
+        I: IntoIterator<Item = LayerPosition>,
+    {
+        let line_points: Vec<_> = points
+            .into_iter()
+            .map(|pos| (self.transform_position(pos).into(), false))
+            .collect();
+        let line = printpdf::Line {
+            points: line_points,
+            is_closed: false,
+            has_fill: true,
+            has_stroke: true,
+            is_clipping_path: false,
+        };
+        self.data.layer.add_shape(line);
+    }
+
     fn set_fill_color(&self, color: Option<Color>) {
         if self.data.update_fill_color(color) {
             self.data
@@ -630,6 +648,19 @@ impl<'p> Area<'p> {
     /// Returns a position relative to the top left corner of this area.
     fn position(&self, position: Position) -> LayerPosition {
         LayerPosition::from_area(self, position)
+    }
+
+    /// Fills the area with the given color.
+    pub fn fill_color(&self, color: Color) {
+        self.layer.set_fill_color(Some(color));
+        let points = vec![
+            self.position(Position::new(Mm(0.0), Mm(0.0))),
+            self.position(Position::new(self.size.width, Mm(0.0))),
+            self.position(Position::new(self.size.width, self.size.height)),
+            self.position(Position::new(Mm(0.0), self.size.height)),
+        ];
+        self.layer
+            .add_line_shape_with_fill_color(points.into_iter());
     }
 }
 

@@ -50,6 +50,7 @@ use std::mem;
 use crate::error::{Error, ErrorKind};
 use crate::fonts;
 use crate::render;
+use crate::style::Color;
 use crate::style::{LineStyle, Style, StyledString};
 use crate::wrap;
 use crate::{Alignment, Context, Element, Margins, Mm, Position, RenderResult, Size};
@@ -1318,6 +1319,7 @@ impl CellDecorator for FrameCellDecorator {
 pub struct TableLayoutRow<'a> {
     table_layout: &'a mut TableLayout,
     elements: Vec<Box<dyn Element>>,
+    background_color: Option<Color>,
 }
 
 impl<'a> TableLayoutRow<'a> {
@@ -1325,6 +1327,7 @@ impl<'a> TableLayoutRow<'a> {
         TableLayoutRow {
             table_layout,
             elements: Vec::new(),
+            background_color: None,
         }
     }
 
@@ -1340,12 +1343,19 @@ impl<'a> TableLayoutRow<'a> {
         self
     }
 
+    /// Sets the background color for this row.
+    pub fn set_background_color(mut self, color: Color) -> Self {
+        self.background_color = Some(color);
+        self
+    }
+
     /// Tries to append this row to the table.
     ///
     /// This method fails if the number of elements in this row does not match the number of
     /// columns in the table.
     pub fn push(self) -> Result<(), Error> {
-        self.table_layout.push_row(self.elements)
+        self.table_layout
+            .push_row(self.elements, self.background_color)
     }
 }
 
@@ -1394,7 +1404,7 @@ impl<'a, E: IntoBoxedElement> iter::Extend<E> for TableLayoutRow<'a> {
 /// [`FrameCellDecorator`]: struct.FrameCellDecorator.html
 pub struct TableLayout {
     column_weights: Vec<usize>,
-    rows: Vec<Vec<Box<dyn Element>>>,
+    rows: Vec<(Vec<Box<dyn Element>>, Option<Color>)>,
     render_idx: usize,
     cell_decorator: Option<Box<dyn CellDecorator>>,
 }
@@ -1429,9 +1439,13 @@ impl TableLayout {
     ///
     /// The number of elements in the given vector must match the number of columns.  Otherwise, an
     /// error is returned.
-    pub fn push_row(&mut self, row: Vec<Box<dyn Element>>) -> Result<(), Error> {
+    pub fn push_row(
+        &mut self,
+        row: Vec<Box<dyn Element>>,
+        background_color: Option<Color>,
+    ) -> Result<(), Error> {
         if row.len() == self.column_weights.len() {
-            self.rows.push(row);
+            self.rows.push((row, background_color));
             Ok(())
         } else {
             Err(Error::new(
@@ -1465,7 +1479,22 @@ impl TableLayout {
         };
 
         let mut row_height = Mm::from(0);
-        for (area, element) in cell_areas.iter().zip(self.rows[self.render_idx].iter_mut()) {
+        let (row_elements, background_color) = &mut self.rows[self.render_idx];
+
+        if let Some(color) = background_color {
+            for (area, element) in cell_areas.iter().zip(row_elements.iter_mut()) {
+                let element_result = element.render(context, area.clone(), style)?;
+                row_height = row_height.max(element_result.size.height);
+            }
+
+            for area in &cell_areas {
+                let mut fill_area = area.clone();
+                fill_area.set_height(row_height);
+                fill_area.fill_color(*color);
+            }
+        }
+
+        for (area, element) in cell_areas.iter().zip(row_elements.iter_mut()) {
             let element_result = element.render(context, area.clone(), style)?;
             result.has_more |= element_result.has_more;
             row_height = row_height.max(element_result.size.height);

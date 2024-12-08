@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2021 Robin Krahl <robin.krahl@ireas.org>
 // SPDX-License-Identifier: CC0-1.0
 
-use genpdf::{elements, fonts, style, Element as _};
+use genpdf::{elements, fonts, style, Alignment, Element as _};
 
 const FONT_DIRS: &[&str] = &[
     "/usr/share/fonts/liberation",
@@ -200,6 +200,50 @@ test_with_document! {
                 .framed(style::LineStyle::new().with_thickness(5))
         );
 
+        doc
+    }
+
+    #[test]
+    // Ignore as this currently returns an error
+    // #[ignore]
+    fn table(doc: genpdf::Document) -> genpdf::Document {
+        let mut doc = doc;
+        let mut decorator = genpdf::SimplePageDecorator::new();
+        decorator.set_margins(10);
+        decorator.set_header(|page| {
+            let mut layout = elements::LinearLayout::vertical();
+            if page > 1 {
+                layout.push(
+                    elements::Paragraph::new(format!("Page {}", page)).aligned(Alignment::Center),
+                );
+                layout.push(elements::Break::new(1));
+            }
+            layout.styled(style::Style::new().with_font_size(10))
+        });
+        doc.set_page_decorator(decorator);
+        let mut table = elements::TableLayout::new(vec![2, 2]);
+        table.set_cell_decorator(elements::FrameCellDecorator::new(true, true, true));
+        table
+            .row()
+            .set_background_color(style::Color::Rgb(0, 0, 0))
+            .element(elements::Paragraph::new(
+                "Vendor: Công ty TNHH Gigamed",
+            ).styled(style::Style::new().with_color(style::Color::Rgb(255, 255, 255))))
+            .element(
+                elements::Paragraph::new("PO658597").aligned(Alignment::Right),
+            )
+            .push()
+            .expect("invalid table row");
+
+        table
+            .row()
+            .element(elements::Paragraph::new(""))
+            .element(elements::Paragraph::new("PO658597").aligned(Alignment::Right))
+            .push()
+            .expect("invalid table row");
+
+        doc.push(table);
+        doc.push(elements::Paragraph::new("Donaudampfschifffahrtskapitänsmützenhersteller"));
         doc
     }
 }
