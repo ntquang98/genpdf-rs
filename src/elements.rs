@@ -1319,7 +1319,15 @@ impl CellDecorator for FrameCellDecorator {
 pub struct TableLayoutRow<'a> {
     table_layout: &'a mut TableLayout,
     elements: Vec<Box<dyn Element>>,
-    background_color: Option<Color>,
+    background_color: Option<RowBackgroundColor>,
+}
+
+/// Represents the background color and optional height of a row.
+pub struct RowBackgroundColor {
+    /// The background color of the row.
+    pub color: Color,
+    /// The height of the row.
+    pub height: Option<f64>,
 }
 
 impl<'a> TableLayoutRow<'a> {
@@ -1344,7 +1352,7 @@ impl<'a> TableLayoutRow<'a> {
     }
 
     /// Sets the background color for this row.
-    pub fn set_background_color(mut self, color: Color) -> Self {
+    pub fn set_background_color(mut self, color: RowBackgroundColor) -> Self {
         self.background_color = Some(color);
         self
     }
@@ -1404,7 +1412,7 @@ impl<'a, E: IntoBoxedElement> iter::Extend<E> for TableLayoutRow<'a> {
 /// [`FrameCellDecorator`]: struct.FrameCellDecorator.html
 pub struct TableLayout {
     column_weights: Vec<usize>,
-    rows: Vec<(Vec<Box<dyn Element>>, Option<Color>)>,
+    rows: Vec<(Vec<Box<dyn Element>>, Option<RowBackgroundColor>)>,
     render_idx: usize,
     cell_decorator: Option<Box<dyn CellDecorator>>,
 }
@@ -1442,7 +1450,7 @@ impl TableLayout {
     pub fn push_row(
         &mut self,
         row: Vec<Box<dyn Element>>,
-        background_color: Option<Color>,
+        background_color: Option<RowBackgroundColor>,
     ) -> Result<(), Error> {
         if row.len() == self.column_weights.len() {
             self.rows.push((row, background_color));
@@ -1468,29 +1476,29 @@ impl TableLayout {
         let mut result = RenderResult::default();
 
         let areas = area.split_horizontally(&self.column_weights);
+        let render_idx = self.render_idx;
+
+        let mut row_height = Mm::from(0);
+        let (row_elements, background_color) = &mut self.rows[self.render_idx];
+
         let cell_areas = if let Some(decorator) = &self.cell_decorator {
             areas
                 .iter()
                 .enumerate()
-                .map(|(i, area)| decorator.prepare_cell(i, self.render_idx, area.clone()))
+                .map(|(i, area)| decorator.prepare_cell(i, render_idx, area.clone()))
                 .collect()
         } else {
             areas.clone()
         };
 
-        let mut row_height = Mm::from(0);
-        let (row_elements, background_color) = &mut self.rows[self.render_idx];
-
         if let Some(color) = background_color {
-            for (area, element) in cell_areas.iter().zip(row_elements.iter_mut()) {
-                let element_result = element.render(context, area.clone(), style)?;
-                row_height = row_height.max(element_result.size.height);
-            }
-
+            let fill_height = color.height.unwrap_or(4.86792298828125);
+            let fill_height = Mm::from(fill_height);
+            let color = color.color;
             for area in &cell_areas {
                 let mut fill_area = area.clone();
-                fill_area.set_height(row_height);
-                fill_area.fill_color(*color);
+                fill_area.set_height(fill_height);
+                fill_area.fill_color(color);
             }
         }
 
@@ -1500,6 +1508,7 @@ impl TableLayout {
             row_height = row_height.max(element_result.size.height);
         }
         result.size.height = row_height;
+        println!("row_height: {:?}", row_height);
 
         if let Some(decorator) = &mut self.cell_decorator {
             for (i, area) in areas.into_iter().enumerate() {

@@ -225,12 +225,15 @@ test_with_document! {
         table.set_cell_decorator(elements::FrameCellDecorator::new(true, true, true));
         table
             .row()
-            .set_background_color(style::Color::Rgb(0, 0, 0))
+            .set_background_color(elements::RowBackgroundColor { color: style::Color::Rgb(59, 59, 59), height: Some(4.86792298828125) })
             .element(elements::Paragraph::new(
                 "Vendor: Công ty TNHH Gigamed",
-            ).styled(style::Style::new().with_color(style::Color::Rgb(255, 255, 255))))
+            )
+            .styled(style::Style::new().with_color(style::Color::Rgb(255, 255, 255)))
+        )
             .element(
-                elements::Paragraph::new("PO658597").aligned(Alignment::Right),
+                elements::Paragraph::new("PO658597").aligned(Alignment::Right)
+                .styled(style::Style::new().with_color(style::Color::Rgb(255, 255, 255))),
             )
             .push()
             .expect("invalid table row");
