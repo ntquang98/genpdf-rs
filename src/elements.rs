@@ -1508,7 +1508,10 @@ impl TableLayout {
             row_height = row_height.max(element_result.size.height);
         }
         result.size.height = row_height;
-        println!("row_height: {:?}", row_height);
+
+        if let Some(_) = background_color {
+            println!("row_height: {:?}", row_height);
+        }
 
         if let Some(decorator) = &mut self.cell_decorator {
             for (i, area) in areas.into_iter().enumerate() {
