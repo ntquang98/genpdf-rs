@@ -43,6 +43,11 @@ fn check(name: &str, doc: genpdf::Document) {
         std::fs::create_dir(&expected_dir).expect("Failed to create expected directory");
     }
 
+    let expected_path = expected_dir.join(name).with_extension("pdf");
+    if expected_path.exists() {
+        std::fs::remove_file(&expected_path).expect("Failed to delete existing file");
+    }
+
     let mut actual_doc: Vec<u8> = Vec::new();
     doc.render(&mut actual_doc)
         .expect("Failed to render document");
@@ -225,7 +230,7 @@ test_with_document! {
         table.set_cell_decorator(elements::FrameCellDecorator::new(true, true, true));
         table
             .row()
-            .set_background_color(elements::RowBackgroundColor { color: style::Color::Rgb(59, 59, 59), height: Some(4.86792298828125) })
+            .set_background_color(style::Color::Rgb(59, 59, 59))
             .element(elements::Paragraph::new(
                 "Vendor: Công ty TNHH Gigamed",
             )

@@ -273,10 +273,7 @@ fn main() {
     table.set_cell_decorator(elements::FrameCellDecorator::new(true, true, false));
     table
         .row()
-        .set_background_color(elements::RowBackgroundColor {
-            color: style::Color::Greyscale(14),
-            height: None,
-        })
+        .set_background_color(style::Color::Greyscale(14))
         .element(
             elements::Paragraph::new("Index")
                 .styled(style::Effect::Bold)

@@ -148,6 +148,27 @@ impl LinearLayout {
         result.has_more = self.render_idx < self.elements.len();
         Ok(result)
     }
+
+    fn measure_vertical(
+        &mut self,
+        context: &Context,
+        area: render::Area<'_>,
+        style: Style,
+    ) -> Result<RenderResult, Error> {
+        let mut result = RenderResult::default();
+        while area.size().height > Mm(0.0) && self.render_idx < self.elements.len() {
+            let element_result =
+                self.elements[self.render_idx].measure(context, area.clone(), style)?;
+            result.size = result.size.stack_vertical(element_result.size);
+            if element_result.has_more {
+                result.has_more = true;
+                return Ok(result);
+            }
+            self.render_idx += 1;
+        }
+        result.has_more = self.render_idx < self.elements.len();
+        Ok(result)
+    }
 }
 
 impl Element for LinearLayout {
@@ -159,6 +180,16 @@ impl Element for LinearLayout {
     ) -> Result<RenderResult, Error> {
         // TODO: add horizontal layout
         self.render_vertical(context, area, style)
+    }
+
+    fn measure(
+        &mut self,
+        context: &Context,
+        area: render::Area<'_>,
+        style: Style,
+    ) -> Result<RenderResult, Error> {
+        // TODO: add horizontal layout
+        self.measure_vertical(context, area, style)
     }
 }
 
@@ -210,6 +241,22 @@ impl Element for Text {
         } else {
             result.has_more = true;
         }
+        Ok(result)
+    }
+
+    fn measure(
+        &mut self,
+        context: &Context,
+        _: render::Area<'_>,
+        mut style: Style,
+    ) -> Result<RenderResult, Error> {
+        let mut result = RenderResult::default();
+        style.merge(self.text.style);
+
+        result.size = Size::new(
+            style.str_width(&context.font_cache, &self.text.s),
+            style.line_height(&context.font_cache),
+        );
         Ok(result)
     }
 }
@@ -345,7 +392,7 @@ impl Element for Paragraph {
         let mut rendered_len = 0;
         let mut wrapper = wrap::Wrapper::new(words, context, area.size().width);
         for (line, delta) in &mut wrapper {
-            let width = line.iter().map(|s| s.width(&context.font_cache)).sum();
+            let width: Mm = line.iter().map(|s| s.width(&context.font_cache)).sum();
             // Calculate the maximum line height
             let metrics = line
                 .iter()
@@ -386,6 +433,49 @@ impl Element for Paragraph {
                 self.words[0].s.replace_range(..rendered_len, "");
                 rendered_len = 0;
             }
+        }
+
+        Ok(result)
+    }
+
+    fn measure(
+        &mut self,
+        context: &Context,
+        mut area: render::Area<'_>,
+        style: Style,
+    ) -> Result<RenderResult, Error> {
+        let mut result = RenderResult::default();
+
+        self.apply_style(style);
+
+        if self.words.is_empty() {
+            if self.text.is_empty() {
+                return Ok(result);
+            }
+            self.words = wrap::Words::new(mem::take(&mut self.text)).collect();
+        }
+
+        let words = self.words.iter().map(Into::into);
+        let mut wrapper = wrap::Wrapper::new(words, context, area.size().width);
+        for (line, _) in &mut wrapper {
+            let width: Mm = line.iter().map(|s| s.width(&context.font_cache)).sum();
+            // Calculate the maximum line height
+            let metrics = line
+                .iter()
+                .map(|s| s.style.metrics(&context.font_cache))
+                .fold(fonts::Metrics::default(), |max, m| max.max(&m));
+
+            result.size = result
+                .size
+                .stack_vertical(Size::new(width, metrics.line_height));
+            area.add_offset(Position::new(0, metrics.line_height));
+        }
+
+        if wrapper.has_overflowed() {
+            return Err(Error::new(
+                "Page overflowed while trying to wrap a string",
+                ErrorKind::PageSizeExceeded,
+            ));
         }
 
         Ok(result)
@@ -463,6 +553,26 @@ impl Element for Break {
         }
         Ok(result)
     }
+
+    fn measure(
+        &mut self,
+        context: &Context,
+        area: render::Area<'_>,
+        style: Style,
+    ) -> Result<RenderResult, Error> {
+        let mut result = RenderResult::default();
+        if self.lines <= 0.0 {
+            return Ok(result);
+        }
+        let line_height = style.line_height(&context.font_cache);
+        let break_height = line_height * self.lines;
+        if break_height < area.size().height {
+            result.size.height = break_height;
+        } else {
+            result.size.height = area.size().height;
+        }
+        Ok(result)
+    }
 }
 
 /// A page break.
@@ -488,6 +598,26 @@ impl PageBreak {
 
 impl Element for PageBreak {
     fn render(
+        &mut self,
+        _context: &Context,
+        _area: render::Area<'_>,
+        _style: Style,
+    ) -> Result<RenderResult, Error> {
+        if self.cont {
+            Ok(RenderResult::default())
+        } else {
+            // We don’t use (0,0) as the size as this might abort the render process if this is the
+            // first element on a new page, see the Rendering Process section of the crate
+            // documentation.
+            self.cont = true;
+            Ok(RenderResult {
+                size: Size::new(1, 0),
+                has_more: true,
+            })
+        }
+    }
+
+    fn measure(
         &mut self,
         _context: &Context,
         _area: render::Area<'_>,
@@ -561,6 +691,22 @@ impl<E: Element> Element for PaddedElement<E> {
         result.size.height += self.padding.top + self.padding.bottom;
         Ok(result)
     }
+
+    fn measure(
+        &mut self,
+        context: &Context,
+        mut area: render::Area<'_>,
+        style: Style,
+    ) -> Result<RenderResult, Error> {
+        area.add_margins(Margins {
+            bottom: Mm(0.0),
+            ..self.padding
+        });
+        let mut result = self.element.measure(context, area, style)?;
+        result.size.width += self.padding.left + self.padding.right;
+        result.size.height += self.padding.top + self.padding.bottom;
+        Ok(result)
+    }
 }
 
 /// Adds a default style to the wrapped element and its children.
@@ -609,6 +755,16 @@ impl<E: Element> Element for StyledElement<E> {
     ) -> Result<RenderResult, Error> {
         style.merge(self.style);
         self.element.render(context, area, style)
+    }
+
+    fn measure(
+        &mut self,
+        context: &Context,
+        area: render::Area<'_>,
+        mut style: Style,
+    ) -> Result<RenderResult, Error> {
+        style.merge(self.style);
+        self.element.measure(context, area, style)
     }
 }
 
@@ -719,6 +875,41 @@ impl<E: Element> Element for FramedElement<E> {
 
         Ok(result)
     }
+
+    fn measure(
+        &mut self,
+        context: &Context,
+        area: render::Area<'_>,
+        style: Style,
+    ) -> Result<RenderResult, Error> {
+        // For the element area calculations, we have to take into account the full line thickness.
+        // For the frame area, we only need half because we specify the center of the line.
+        let line_thickness = self.line_style.thickness();
+
+        // Calculate the areas in which to draw the element and the frame.
+        let mut element_area = area.clone();
+        element_area.add_margins(Margins::trbl(
+            0,
+            line_thickness,
+            line_thickness,
+            line_thickness,
+        ));
+
+        // Draw the element.
+        let mut result = self.element.measure(context, element_area, style)?;
+        result.size.width = area.size().width;
+
+        if self.is_first {
+            result.size.height += line_thickness;
+        }
+        if !result.has_more {
+            result.size.height += line_thickness;
+        }
+
+        self.is_first = false;
+
+        Ok(result)
+    }
 }
 
 /// An unordered list of elements with bullet points.
@@ -818,6 +1009,15 @@ impl Element for UnorderedList {
         style: Style,
     ) -> Result<RenderResult, Error> {
         self.layout.render(context, area, style)
+    }
+
+    fn measure(
+        &mut self,
+        context: &Context,
+        area: render::Area<'_>,
+        style: Style,
+    ) -> Result<RenderResult, Error> {
+        self.layout.measure(context, area, style)
     }
 }
 
@@ -937,6 +1137,15 @@ impl Element for OrderedList {
     ) -> Result<RenderResult, Error> {
         self.layout.render(context, area, style)
     }
+
+    fn measure(
+        &mut self,
+        context: &Context,
+        area: render::Area<'_>,
+        style: Style,
+    ) -> Result<RenderResult, Error> {
+        self.layout.measure(context, area, style)
+    }
 }
 
 impl Default for OrderedList {
@@ -1032,6 +1241,19 @@ impl<E: Element> Element for BulletPoint<E> {
             )?;
             self.bullet_rendered = true;
         }
+        Ok(result)
+    }
+
+    fn measure(
+        &mut self,
+        context: &Context,
+        area: render::Area<'_>,
+        style: Style,
+    ) -> Result<RenderResult, Error> {
+        let mut element_area = area.clone();
+        element_area.add_offset(Position::new(self.indent, 0));
+        let mut result = self.element.measure(context, element_area, style)?;
+        result.size.width += self.indent;
         Ok(result)
     }
 }
@@ -1319,15 +1541,7 @@ impl CellDecorator for FrameCellDecorator {
 pub struct TableLayoutRow<'a> {
     table_layout: &'a mut TableLayout,
     elements: Vec<Box<dyn Element>>,
-    background_color: Option<RowBackgroundColor>,
-}
-
-/// Represents the background color and optional height of a row.
-pub struct RowBackgroundColor {
-    /// The background color of the row.
-    pub color: Color,
-    /// The height of the row.
-    pub height: Option<f64>,
+    background_color: Option<Color>,
 }
 
 impl<'a> TableLayoutRow<'a> {
@@ -1352,7 +1566,7 @@ impl<'a> TableLayoutRow<'a> {
     }
 
     /// Sets the background color for this row.
-    pub fn set_background_color(mut self, color: RowBackgroundColor) -> Self {
+    pub fn set_background_color(mut self, color: Color) -> Self {
         self.background_color = Some(color);
         self
     }
@@ -1412,7 +1626,7 @@ impl<'a, E: IntoBoxedElement> iter::Extend<E> for TableLayoutRow<'a> {
 /// [`FrameCellDecorator`]: struct.FrameCellDecorator.html
 pub struct TableLayout {
     column_weights: Vec<usize>,
-    rows: Vec<(Vec<Box<dyn Element>>, Option<RowBackgroundColor>)>,
+    rows: Vec<(Vec<Box<dyn Element>>, Option<Color>)>,
     render_idx: usize,
     cell_decorator: Option<Box<dyn CellDecorator>>,
 }
@@ -1450,7 +1664,7 @@ impl TableLayout {
     pub fn push_row(
         &mut self,
         row: Vec<Box<dyn Element>>,
-        background_color: Option<RowBackgroundColor>,
+        background_color: Option<Color>,
     ) -> Result<(), Error> {
         if row.len() == self.column_weights.len() {
             self.rows.push((row, background_color));
@@ -1491,14 +1705,21 @@ impl TableLayout {
             areas.clone()
         };
 
+        // Calculate the row height by measuring the elements without rendering them
+        for (area, element) in cell_areas.iter().zip(row_elements.iter_mut()) {
+            let element_result = element.measure(context, area.clone(), style)?;
+            row_height = row_height.max(element_result.size.height);
+        }
+
+        if let Some(_) = background_color {
+            println!("measure row_height: {:?}", row_height);
+        }
+
         if let Some(color) = background_color {
-            let fill_height = color.height.unwrap_or(4.86792298828125);
-            let fill_height = Mm::from(fill_height);
-            let color = color.color;
             for area in &cell_areas {
                 let mut fill_area = area.clone();
-                fill_area.set_height(fill_height);
-                fill_area.fill_color(color);
+                fill_area.set_height(row_height);
+                fill_area.fill_color(*color);
             }
         }
 
@@ -1510,7 +1731,7 @@ impl TableLayout {
         result.size.height = row_height;
 
         if let Some(_) = background_color {
-            println!("row_height: {:?}", row_height);
+            println!("actual row_height: {:?}", row_height);
         }
 
         if let Some(decorator) = &mut self.cell_decorator {
@@ -1550,6 +1771,51 @@ impl Element for TableLayout {
             self.render_idx += 1;
         }
         result.has_more = self.render_idx < self.rows.len();
+        Ok(result)
+    }
+
+    /// Measures the height of the table without rendering it.
+    fn measure(
+        &mut self,
+        context: &Context,
+        area: render::Area<'_>,
+        style: Style,
+    ) -> Result<RenderResult, Error> {
+        let mut result = RenderResult::default();
+        let mut total_height = Mm::from(0);
+
+        if self.column_weights.is_empty() {
+            return Ok(result);
+        }
+
+        if let Some(decorator) = &mut self.cell_decorator {
+            decorator.set_table_size(self.column_weights.len(), self.rows.len());
+        }
+
+        let areas = area.split_horizontally(&self.column_weights);
+
+        for (row_idx, (row_elements, _)) in self.rows.iter_mut().enumerate() {
+            let mut row_height = Mm::from(0);
+
+            let cell_areas = if let Some(decorator) = &self.cell_decorator {
+                areas
+                    .iter()
+                    .enumerate()
+                    .map(|(i, area)| decorator.prepare_cell(i, row_idx, area.clone()))
+                    .collect()
+            } else {
+                areas.clone()
+            };
+
+            for (area, element) in cell_areas.iter().zip(row_elements.iter_mut()) {
+                let element_result = element.measure(context, area.clone(), style)?;
+                row_height = row_height.max(element_result.size.height);
+            }
+
+            total_height += row_height;
+        }
+        result.size.height = total_height;
+
         Ok(result)
     }
 }

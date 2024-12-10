@@ -918,6 +918,7 @@ pub trait Element {
     ///
     /// [`Document`]: struct.Document.html
     /// [`render`]: struct.Document.html#method.render
+    /// [`measure`]: struct.Document.html#method.measure
     /// [`render_to_file`]: struct.Document.html#method.render_to_file
     /// [`RenderResult`]: struct.RenderResult.html
     fn render(
@@ -950,6 +951,27 @@ pub trait Element {
     {
         elements::StyledElement::new(self, style.into())
     }
+
+    /// Measures the size of this element in the given area using the given style and font cache.
+    ///
+    /// This method is called to determine the size of the element before rendering it.
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - The context for the rendering process.
+    /// * `area` - The area available for rendering the element.
+    /// * `style` - The style to be applied to the element.
+    ///
+    /// # Returns
+    ///
+    /// A `RenderResult` containing the size of the area used by the element and a flag indicating
+    /// whether the element has more content that did not fit in the provided area.
+    fn measure(
+        &mut self,
+        context: &Context,
+        area: render::Area<'_>,
+        style: style::Style,
+    ) -> Result<RenderResult, error::Error>;
 }
 
 /// The context for a rendering process.
