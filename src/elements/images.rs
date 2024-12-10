@@ -232,6 +232,42 @@ impl Element for Image {
 
         Ok(result)
     }
+
+    fn measure(
+        &mut self,
+        _context: &Context,
+        area: render::Area<'_>,
+        _style: style::Style,
+    ) -> Result<RenderResult, Error> {
+        let mut result = RenderResult::default();
+        let true_size = self.get_size();
+        let (bb_origin, bb_size) = bounding_box_offset_and_size(&self.rotation, &true_size);
+
+        let mut position: Position = if let Some(position) = self.position {
+            position
+        } else {
+            // Update the result size to be based on the bounding-box size/offset.
+            result.size = bb_size;
+
+            // No position override given; so we calculate the Alignment offset based on
+            // the area-size and width of the bounding box.
+            self.get_offset(bb_size.width, area.size().width)
+        };
+
+        // Fix the position with the bounding-box's origin which was changed from
+        // (0,0) when it was rotated in any way.
+        position += bb_origin;
+
+        // Insert/render the image with the overridden/calculated position.
+        // area.add_image(&self.data, position, self.scale, self.rotation, self.dpi);
+
+        // Always false as we can't safely do this unless we want to try to do "sub-images".
+        // This is technically possible with the `image` package, but it is potentially more
+        // work than necessary. I'd rather support an "Auto-Scale" method to fit to area.
+        result.has_more = false;
+
+        Ok(result)
+    }
 }
 
 /// Given the Size of a box (width/height), compute the bounding-box size and offset when
