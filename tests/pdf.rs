@@ -232,7 +232,7 @@ test_with_document! {
             .row()
             .set_background_color(style::Color::Rgb(59, 59, 59))
             .element(elements::Paragraph::new(
-                "Vendor: Công ty TNHH Gigamed",
+                "Vendor: Công ty TNHH Gigamed is one of the leading suppliers of electronic components, it also provides a wide range of services to the electronics manufacturing industry.",
             )
             .styled(style::Style::new().with_color(style::Color::Rgb(255, 255, 255)))
         )
